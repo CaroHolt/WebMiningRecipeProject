@@ -1,6 +1,8 @@
 import selenium
+import nltk
 
 from selenium import webdriver
+from rake_nltk import Rake
 import pandas as pd
 
 # Insert list of recipes to recommend
@@ -27,5 +29,24 @@ def get_image_source_url(recipeList):
             print("No page found for {} - {}".format(recipe_id, err))
 
     return recipeList
+
+#Insert dataframe and name of old and new column as string
+def get_keywords(df, oldColumnName, newColumnName):
+    df[newColumnName] = ""
+    for index, row in df.iterrows():
+        oldEntries = row[oldColumnName]
+        if oldColumnName == 'steps':
+            oldEntries = row[oldColumnName].replace('[', '').replace(', ', '').replace(']', '').replace('and', '\'').split("\'")
+            oldEntries = list(filter(None, oldEntries))
+            all_entries = ""
+            for i in oldEntries:
+                all_entries += i
+            oldEntries = all_entries
+        r = Rake()
+        r.extract_keywords_from_text(oldEntries)
+        key_words_dict_scores = r.get_word_degrees()
+        df.at[index, newColumnName] = list(key_words_dict_scores.keys())
+    df.drop(columns=[oldColumnName], inplace=True)
+    return df
 
 
