@@ -45,8 +45,8 @@ def get_keywords(df, oldColumnName, newColumnName):
         r = Rake()
         r.extract_keywords_from_text(oldEntries)
         key_words_dict_scores = r.get_word_degrees()
-        df.at[index, newColumnName] = list(key_words_dict_scores.keys())
+        listEntries = list(key_words_dict_scores.keys())
+        df.at[index, newColumnName] = ' '.join(listEntries)
     df.drop(columns=[oldColumnName], inplace=True)
     return df
-
 
