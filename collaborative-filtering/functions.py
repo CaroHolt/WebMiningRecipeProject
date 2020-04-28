@@ -89,12 +89,10 @@ def random_sampling_filter(df, columns, *args, **kwargs):
     return random_sample
 
 
-def evaluation_plot(models, performance_measure):
-
-    # TODO: Add model-names from Loop
+def evaluation_plot(models, model_names, performance_measure="RMSE", plot_title=""):
 
     # Throw error message if the performance measure is not 'RMSE' or 'MAE'
-    if measure != "RMSE" or measure != "MAE":
+    if performance_measure != "RMSE" and performance_measure != "MAE":
         print("Unknown performance measure.")
         return
 
@@ -112,11 +110,33 @@ def evaluation_plot(models, performance_measure):
 
     # Generate plot
     plt.figure(figsize=(18, 5))
-    plt.title(paste(performance_measure, "Performance"), loc='center', fontsize=15)
-    plt.plot(x, y, color='lightcoral', marker='o')
+    plt.title(plot_title + "Performance", loc='center', fontsize=15)
+    plt.plot(model_names, y, color='lightcoral', marker='o')
     plt.xlabel('Models', fontsize=15)
-    plt.ylabel(paste(performance_measure, "Value"), fontsize=15)
+    plt.ylabel(performance_measure + "Value", fontsize=15)
     plt.grid(ls='dotted')
-    plot.show()
+    return
+
+
+# Evaluate filtering results
+def evaluate_filtering(filtered_df, unfiltered_df):
+
+    # Print the number of ratings included in the filtered dataset
+    print(f"Number of ratings that are left: {len(filtered_df)}\n")
+
+    # Print the number of users included in the filtered dataset
+    print(f"Number of users that are left: {filtered_df.user_id.unique().size}\n")
+
+    # Print the number of recipes included in the filtered dataset
+    print(f"Number of recipes that are left: {filtered_df.recipe_id.unique().size}\n")
+
+    # Print the fraction of ratings included in the filtered dataset
+    print(f"Fraction of ratings that is left: {round(len(filtered_df) / len(unfiltered_df), 2)}\n")
+
+    # Print the fraction of users included in the filtered dataset
+    print(f"Fraction of users that is left: {round(filtered_df.user_id.unique().size / unfiltered_df.user_id.unique().size, 2)}\n")
+
+    # Print the fraction of recipes included in the filtered dataset
+    print(f"Fraction of recipes that is left: {round(filtered_df.recipe_id.unique().size / unfiltered_df.recipe_id.unique().size, 2)}\n")
     return
 
