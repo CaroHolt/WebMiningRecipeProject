@@ -1,0 +1,2510 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Loading the data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "import math\n",
+    "from IPython.core.display import display\n",
+    "from sklearn.feature_extraction import stop_words\n",
+    "from sklearn.metrics import jaccard_score, pairwise_distances_chunked, mean_squared_error, mean_absolute_error"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#importing the raw data\n",
+    "\n",
+    "recipes_raw = pd.read_csv(\"./Data/RAW_recipes.csv\")\n",
+    "interactions_raw = pd.read_csv(\"./Data/RAW_interactions.csv\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "display(recipes_raw.head(5))\n",
+    "print(\"shape:\",recipes_raw.shape)\n",
+    "\n",
+    "display(interactions_raw.head(5))\n",
+    "print(\"shape:\",interactions_raw.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#make copies so that we don't have to reload the data\n",
+    "\n",
+    "df_r = recipes_raw.copy()\n",
+    "df_i = interactions_raw.copy()\n",
+    "\n",
+    "df_r = df_r.rename({\"id\": \"recipe_id\"}, axis = 1)\n",
+    "#df_r = df_r.set_index(\"recipe_id\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Exploratory data analysis and preprocessing"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#looking at missing data\n",
+    "\n",
+    "is_na = pd.DataFrame((df_r.isna().sum()), columns =[\"sum_na\"])\n",
+    "display(is_na[is_na[\"sum_na\"]!=0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(231636, 12)"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#drop the one na row where the title of the recipe is missing\n",
+    "df_r.drop(df_r[df_r[\"name\"].isna()].index, inplace =True)\n",
+    "df_r.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "# rows where description is missing: 4979 || No mistakes? True\n"
+     ]
+    }
+   ],
+   "source": [
+    "# add dummy variable to indicate missing descriptions\n",
+    "df_r[\"description_na\"] = df_r[\"description\"].isna().apply(lambda x: 1 if x == True else 0)\n",
+    "\n",
+    "df_r[\"description\"] = df_r[\"description\"].fillna(\"NA\")\n",
+    "\n",
+    "print(\"# rows where description is missing:\", len(df_r[df_r[\"description_na\"] == 1]), \"|| No mistakes?\", len(df_r[df_r[\"description_na\"] == 1]) == len(df_r[df_r[\"description\"] == \"NA\"]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Preprocess Minutes column"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "display(df_r[df_r[\"minutes\"]==df_r[\"minutes\"].min()])\n",
+    "display(df_r.nlargest(10, 'minutes'))\n",
+    "\n",
+    "# let's deal with the 1094 recipes which don't have any minutes later"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#minutes -> hours to get a better feeling for the time\n",
+    "\n",
+    "df_r[\"hours\"] = df_r[\"minutes\"]/60"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#let's have a look at the really long recipes\n",
+    "\n",
+    "df_r[df_r[\"hours\"]>24].name\n",
+    "\n",
+    "#we see that there are legit recipes which are very long"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(231635, 14)"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#Correct some obvious outliers, but rest of the large recipes are liquors that take months to make\n",
+    "\n",
+    "df_r.loc[144074, \"minutes\"]= 25\n",
+    "df_r.drop(df_r[df_r[\"name\"]==\"how to preserve a husband\"].index, inplace=True)\n",
+    "df_r.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#minutes\n",
+    "plt.figure(figsize=(10,5))\n",
+    "plt.hist(df_r[\"hours\"], log=True)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Checking out n_ingredients"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#check number of ingredients\n",
+    "display(df_r.n_ingredients.describe())\n",
+    "df_r[\"n_ingredients\"].plot(kind=\"box\", vert =False, figsize=(16,2))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_r[df_r['n_ingredients']<=1]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Include average ratings into recipe df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "test = pd.DataFrame(df_i.groupby(\"recipe_id\").count())\n",
+    "test[test[\"review\"]==0]\n",
+    "\n",
+    "print(\"# of recipes involved in interactions:\", test.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#check how many reviews where given w/o a rating\n",
+    "print(\"# interactions w/o rating, only review:\",len(df_i[df_i[\"rating\"]==0]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "shape after merging: (231635, 16)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>name</th>\n",
+       "      <th>recipe_id</th>\n",
+       "      <th>minutes</th>\n",
+       "      <th>contributor_id</th>\n",
+       "      <th>submitted</th>\n",
+       "      <th>tags</th>\n",
+       "      <th>nutrition</th>\n",
+       "      <th>n_steps</th>\n",
+       "      <th>steps</th>\n",
+       "      <th>description</th>\n",
+       "      <th>ingredients</th>\n",
+       "      <th>n_ingredients</th>\n",
+       "      <th>description_na</th>\n",
+       "      <th>hours</th>\n",
+       "      <th>num_interactions</th>\n",
+       "      <th>avg_rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>arriba   baked winter squash mexican style</td>\n",
+       "      <td>137739</td>\n",
+       "      <td>55</td>\n",
+       "      <td>47892</td>\n",
+       "      <td>2005-09-16</td>\n",
+       "      <td>['60-minutes-or-less', 'time-to-make', 'course...</td>\n",
+       "      <td>[51.5, 0.0, 13.0, 0.0, 2.0, 0.0, 4.0]</td>\n",
+       "      <td>11</td>\n",
+       "      <td>['make a choice and proceed with recipe', 'dep...</td>\n",
+       "      <td>autumn is my favorite time of year to cook! th...</td>\n",
+       "      <td>['winter squash', 'mexican seasoning', 'mixed ...</td>\n",
+       "      <td>7</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0.916667</td>\n",
+       "      <td>3</td>\n",
+       "      <td>5.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>a bit different  breakfast pizza</td>\n",
+       "      <td>31490</td>\n",
+       "      <td>30</td>\n",
+       "      <td>26278</td>\n",
+       "      <td>2002-06-17</td>\n",
+       "      <td>['30-minutes-or-less', 'time-to-make', 'course...</td>\n",
+       "      <td>[173.4, 18.0, 0.0, 17.0, 22.0, 35.0, 1.0]</td>\n",
+       "      <td>9</td>\n",
+       "      <td>['preheat oven to 425 degrees f', 'press dough...</td>\n",
+       "      <td>this recipe calls for the crust to be prebaked...</td>\n",
+       "      <td>['prepared pizza crust', 'sausage patty', 'egg...</td>\n",
+       "      <td>6</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0.500000</td>\n",
+       "      <td>4</td>\n",
+       "      <td>4.666667</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>all in the kitchen  chili</td>\n",
+       "      <td>112140</td>\n",
+       "      <td>130</td>\n",
+       "      <td>196586</td>\n",
+       "      <td>2005-02-25</td>\n",
+       "      <td>['time-to-make', 'course', 'preparation', 'mai...</td>\n",
+       "      <td>[269.8, 22.0, 32.0, 48.0, 39.0, 27.0, 5.0]</td>\n",
+       "      <td>6</td>\n",
+       "      <td>['brown ground beef in large pot', 'add choppe...</td>\n",
+       "      <td>this modified version of 'mom's' chili was a h...</td>\n",
+       "      <td>['ground beef', 'yellow onions', 'diced tomato...</td>\n",
+       "      <td>13</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2.166667</td>\n",
+       "      <td>1</td>\n",
+       "      <td>4.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>alouette  potatoes</td>\n",
+       "      <td>59389</td>\n",
+       "      <td>45</td>\n",
+       "      <td>68585</td>\n",
+       "      <td>2003-04-14</td>\n",
+       "      <td>['60-minutes-or-less', 'time-to-make', 'course...</td>\n",
+       "      <td>[368.1, 17.0, 10.0, 2.0, 14.0, 8.0, 20.0]</td>\n",
+       "      <td>11</td>\n",
+       "      <td>['place potatoes in a large pot of lightly sal...</td>\n",
+       "      <td>this is a super easy, great tasting, make ahea...</td>\n",
+       "      <td>['spreadable cheese with garlic and herbs', 'n...</td>\n",
+       "      <td>11</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0.750000</td>\n",
+       "      <td>2</td>\n",
+       "      <td>4.500000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>amish  tomato ketchup  for canning</td>\n",
+       "      <td>44061</td>\n",
+       "      <td>190</td>\n",
+       "      <td>41706</td>\n",
+       "      <td>2002-10-25</td>\n",
+       "      <td>['weeknight', 'time-to-make', 'course', 'main-...</td>\n",
+       "      <td>[352.9, 1.0, 337.0, 23.0, 3.0, 0.0, 28.0]</td>\n",
+       "      <td>5</td>\n",
+       "      <td>['mix all ingredients&amp; boil for 2 1 / 2 hours ...</td>\n",
+       "      <td>my dh's amish mother raised him on this recipe...</td>\n",
+       "      <td>['tomato juice', 'apple cider vinegar', 'sugar...</td>\n",
+       "      <td>8</td>\n",
+       "      <td>0</td>\n",
+       "      <td>3.166667</td>\n",
+       "      <td>1</td>\n",
+       "      <td>5.000000</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                                         name  recipe_id  minutes  \\\n",
+       "0  arriba   baked winter squash mexican style     137739       55   \n",
+       "1            a bit different  breakfast pizza      31490       30   \n",
+       "2                   all in the kitchen  chili     112140      130   \n",
+       "3                          alouette  potatoes      59389       45   \n",
+       "4          amish  tomato ketchup  for canning      44061      190   \n",
+       "\n",
+       "   contributor_id   submitted  \\\n",
+       "0           47892  2005-09-16   \n",
+       "1           26278  2002-06-17   \n",
+       "2          196586  2005-02-25   \n",
+       "3           68585  2003-04-14   \n",
+       "4           41706  2002-10-25   \n",
+       "\n",
+       "                                                tags  \\\n",
+       "0  ['60-minutes-or-less', 'time-to-make', 'course...   \n",
+       "1  ['30-minutes-or-less', 'time-to-make', 'course...   \n",
+       "2  ['time-to-make', 'course', 'preparation', 'mai...   \n",
+       "3  ['60-minutes-or-less', 'time-to-make', 'course...   \n",
+       "4  ['weeknight', 'time-to-make', 'course', 'main-...   \n",
+       "\n",
+       "                                    nutrition  n_steps  \\\n",
+       "0       [51.5, 0.0, 13.0, 0.0, 2.0, 0.0, 4.0]       11   \n",
+       "1   [173.4, 18.0, 0.0, 17.0, 22.0, 35.0, 1.0]        9   \n",
+       "2  [269.8, 22.0, 32.0, 48.0, 39.0, 27.0, 5.0]        6   \n",
+       "3   [368.1, 17.0, 10.0, 2.0, 14.0, 8.0, 20.0]       11   \n",
+       "4   [352.9, 1.0, 337.0, 23.0, 3.0, 0.0, 28.0]        5   \n",
+       "\n",
+       "                                               steps  \\\n",
+       "0  ['make a choice and proceed with recipe', 'dep...   \n",
+       "1  ['preheat oven to 425 degrees f', 'press dough...   \n",
+       "2  ['brown ground beef in large pot', 'add choppe...   \n",
+       "3  ['place potatoes in a large pot of lightly sal...   \n",
+       "4  ['mix all ingredients& boil for 2 1 / 2 hours ...   \n",
+       "\n",
+       "                                         description  \\\n",
+       "0  autumn is my favorite time of year to cook! th...   \n",
+       "1  this recipe calls for the crust to be prebaked...   \n",
+       "2  this modified version of 'mom's' chili was a h...   \n",
+       "3  this is a super easy, great tasting, make ahea...   \n",
+       "4  my dh's amish mother raised him on this recipe...   \n",
+       "\n",
+       "                                         ingredients  n_ingredients  \\\n",
+       "0  ['winter squash', 'mexican seasoning', 'mixed ...              7   \n",
+       "1  ['prepared pizza crust', 'sausage patty', 'egg...              6   \n",
+       "2  ['ground beef', 'yellow onions', 'diced tomato...             13   \n",
+       "3  ['spreadable cheese with garlic and herbs', 'n...             11   \n",
+       "4  ['tomato juice', 'apple cider vinegar', 'sugar...              8   \n",
+       "\n",
+       "   description_na     hours  num_interactions  avg_rating  \n",
+       "0               0  0.916667                 3    5.000000  \n",
+       "1               0  0.500000                 4    4.666667  \n",
+       "2               0  2.166667                 1    4.000000  \n",
+       "3               0  0.750000                 2    4.500000  \n",
+       "4               0  3.166667                 1    5.000000  "
+      ]
+     },
+     "execution_count": 8,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#create num_interactions & average ratings column\n",
+    "\n",
+    "num_interactions = df_i.groupby(\"recipe_id\")[\"date\"].count()\n",
+    "#only consider the ratings (>0) into the mean, not the reviews w/o ratings\n",
+    "mean_ratings = df_i[df_i[\"rating\"]!=0].groupby(\"recipe_id\")[\"rating\"].mean()\n",
+    "\n",
+    "df_rmerged = df_r.join(num_interactions, how=\"left\", on=\"recipe_id\").join(mean_ratings, how=\"left\", on=\"recipe_id\")\n",
+    "\n",
+    "\n",
+    "print(\"shape after merging:\", df_rmerged.shape)\n",
+    "\n",
+    "df_rmerged = df_rmerged.rename(columns ={\"date\":\"num_interactions\", \"rating\":\"avg_rating\"})\n",
+    "df_rmerged.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Create columns for year, month & age"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Preprocess the \"submitted\" column\n",
+    "df_rmerged[\"submitted\"] = df_rmerged[\"submitted\"].astype(str)\n",
+    "\n",
+    "dates = pd.DataFrame(df_rmerged[\"submitted\"].apply(lambda date: date.split(\"-\")).tolist(), index = df_rmerged.index,columns =[\"year\", \"month\", \"day\"])\n",
+    "\n",
+    "df_rmerged[\"year\"] = dates [\"year\"]\n",
+    "df_rmerged[\"month\"] = dates[\"month\"]\n",
+    "\n",
+    "#create an age column for the recipes\n",
+    "df_rmerged[\"year\"]= df_rmerged[\"year\"].astype(int)\n",
+    "df_rmerged[\"month\"]=df_rmerged[\"month\"].astype(int)\n",
+    "df_rmerged[\"age\"] = (2019-df_rmerged.year)+ df_rmerged.month/12"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#show most popular recipes\n",
+    "\n",
+    "display(df_rmerged.describe())\n",
+    "\n",
+    "#display(df_rmerged.nlargest(10, 'num_interactions'))\n",
+    "\n",
+    "#One can see that the most popular recipes are also very old\n",
+    "df_rmerged[\"num_interactions\"].plot(kind=\"box\", vert =False, figsize=(16,2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Check out n_steps\n",
+    "\n",
+    "n_steps has little outliers. Most of 1step recipes just forgot to add paragraphs in their steps description. We can still use text descriptions for NLP -> don't delete"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_rmerged[df_rmerged['n_steps']==0]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Eliminating low quality/low interaction/duplicate recipes"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#We want some quality in our recommended systems, no description of steps is bad\n",
+    "df_rmerged.drop(df_rmerged[df_rmerged['n_steps']==0].index, inplace=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Shape after removing old & inactive recipes: (21913, 19)\n",
+      "Shape after removing newer & inactive recipes: (11151, 19)\n"
+     ]
+    }
+   ],
+   "source": [
+    "#remove all recipes which are older/younger than 8 years and have less than 15/10 interactions\n",
+    "\n",
+    "index_remove= df_rmerged[(df_rmerged[\"num_interactions\"]<=15) & (df_rmerged[\"age\"]>8.0)][\"recipe_id\"].index\n",
+    "\n",
+    "df_rmerged.drop(index_remove, axis=0, inplace=True)\n",
+    "\n",
+    "print(\"Shape after removing old & inactive recipes:\", df_rmerged.shape)\n",
+    "\n",
+    "index_remove= df_rmerged[(df_rmerged[\"num_interactions\"]<=10)& (df_rmerged[\"age\"]<=8.0)][\"recipe_id\"].index\n",
+    "\n",
+    "df_rmerged.drop(index_remove, axis=0, inplace=True)\n",
+    "\n",
+    "print(\"Shape after removing newer & inactive recipes:\", df_rmerged.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Shape after removing 1 step recipes w/ low interactions: (11151, 19)\n"
+     ]
+    }
+   ],
+   "source": [
+    "#1 step recipes are not inherently bad, often they are just all steps written into one field, but let's filter by interactions\n",
+    "\n",
+    "df_rmerged.drop(df_rmerged[(df_rmerged[\"n_steps\"]==1)&(df_rmerged[\"num_interactions\"]==1)].index, axis=0, inplace =True)\n",
+    "print(\"Shape after removing 1 step recipes w/ low interactions:\", df_rmerged.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Shape after removing 0 minutes interaction w/ low interactions: (11103, 19)\n"
+     ]
+    }
+   ],
+   "source": [
+    "# same for recipes which don't have any time instructions\n",
+    "\n",
+    "df_rmerged.drop(df_rmerged[(df_rmerged['minutes']==0)].index, axis=0, inplace=True)\n",
+    "print('Shape after removing 0 minutes interaction w/ low interactions:', df_rmerged.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "# duplicate recipe titles: 13\n"
+     ]
+    }
+   ],
+   "source": [
+    "#eliminate duplicate recipes through ratings\n",
+    "\n",
+    "#do we have duplicate recipe titles?\n",
+    "print(\"# duplicate recipe titles:\",len(df_rmerged[\"name\"])-len(df_rmerged[\"name\"].unique()))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def choose_best(interactions, ratings, n_dupl):\n",
+    "    # number of interaction are different -> there exists a maximum\n",
+    "    if((len(interactions) != len(set(interactions)))) :\n",
+    "        return interactions.idxmax(axis=1)\n",
+    "    else:# return the maximum rating or any of the duplicate recipes\n",
+    "        return ratings.idxmax(axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Shape after dropping duplicates: (11090, 19)\n"
+     ]
+    }
+   ],
+   "source": [
+    "dupl_recipes = pd.DataFrame(df_rmerged[df_rmerged[\"name\"].duplicated(keep=False)])\n",
+    "dupl_rgrouped= dupl_recipes.groupby('name').groups\n",
+    "\n",
+    "to_keep = []\n",
+    "\n",
+    "for name in dupl_rgrouped:\n",
+    "    n_dupl = len(dupl_rgrouped[name])\n",
+    "    if(n_dupl == 2):\n",
+    "        index1=dupl_rgrouped[name][0]\n",
+    "        index2=dupl_rgrouped[name][1]\n",
+    "        \n",
+    "        interactions = dupl_recipes.loc[[index1, index2], ['num_interactions']].num_interactions\n",
+    "        ratings = dupl_recipes.loc[[index1, index2], ['avg_rating']].avg_rating\n",
+    "        \n",
+    "        to_keep.append(choose_best(interactions, ratings, n_dupl))\n",
+    "    elif (n_dupl==3):\n",
+    "        index1=dupl_rgrouped[name][0]\n",
+    "        index2=dupl_rgrouped[name][1]\n",
+    "        index3=dupl_rgrouped[name][2]\n",
+    "        \n",
+    "        interactions = dupl_recipes.loc[[index1, index2, index3], ['num_interactions']].num_interactions\n",
+    "        ratings = dupl_recipes.loc[[index1, index2, index3], ['avg_rating']].avg_rating\n",
+    "        to_keep.append(choose_best(interactions, ratings, n_dupl))\n",
+    "    else:\n",
+    "        print(\"Error\")\n",
+    "        break \n",
+    "\n",
+    "df_rmerged.drop(df_rmerged.index.intersection(to_keep), axis=0, inplace=True)\n",
+    "print('Shape after dropping duplicates:', df_rmerged.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "is 0 ratings: Empty DataFrame\n",
+      "Columns: [name, recipe_id, minutes, contributor_id, submitted, tags, nutrition, n_steps, steps, description, ingredients, n_ingredients, description_na, hours, num_interactions, avg_rating, year, month, age]\n",
+      "Index: []\n"
+     ]
+    }
+   ],
+   "source": [
+    "#there are no recipes with an average rating of 0\n",
+    "print(\"is 0 ratings:\", df_rmerged[df_rmerged[\"avg_rating\"]==0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "is na ratings: 0\n",
+      "Shape after removing recipes w/o ratings: (11090, 19)\n"
+     ]
+    }
+   ],
+   "source": [
+    "#how many recipes don't have any ratings?\n",
+    "print(\"is na ratings:\", df_rmerged[\"avg_rating\"].isna().sum())\n",
+    "\n",
+    "df_rmerged.drop(df_rmerged[df_rmerged[\"avg_rating\"].isna()].index, axis=0, inplace =True)\n",
+    "print(\"Shape after removing recipes w/o ratings:\", df_rmerged.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "display(df_rmerged.describe())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Generate an URL for every recipe"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_r[\"URL\"] = df_r.apply(lambda row: \"https://www.food.com/recipe/\"+\" \".join(row[\"name\"].split()).replace(\" \", \"-\") \n",
+    "                         +\"-\"+str(row[\"recipe_id\"]), axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Check if website exists\n",
+    "# import requests\n",
+    "# from time import sleep\n",
+    "\n",
+    "# def website_exists(url):\n",
+    "#     try:\n",
+    "#         request = requests.get(url)\n",
+    "#         if request.status_code == 200:\n",
+    "#             return 1\n",
+    "#         else:\n",
+    "#             return 0\n",
+    "#     except NewConnectionError:\n",
+    "#         return 0\n",
+    "#     except MaxRetryError:\n",
+    "#         print(\"Max\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Incuding users into the mix: Creating user-interaction data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_uactivity = df_i[['recipe_id','user_id', 'rating']]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th>rating</th>\n",
+       "      <th>0</th>\n",
+       "      <th>1</th>\n",
+       "      <th>2</th>\n",
+       "      <th>3</th>\n",
+       "      <th>4</th>\n",
+       "      <th>5</th>\n",
+       "      <th>total_interactions</th>\n",
+       "      <th>total_ratings</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>user_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>1533</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>12.0</td>\n",
+       "      <td>108.0</td>\n",
+       "      <td>128.0</td>\n",
+       "      <td>128.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1535</th>\n",
+       "      <td>6.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>10.0</td>\n",
+       "      <td>53.0</td>\n",
+       "      <td>248.0</td>\n",
+       "      <td>476.0</td>\n",
+       "      <td>794.0</td>\n",
+       "      <td>788.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1581</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>1.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1634</th>\n",
+       "      <td>9.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>7.0</td>\n",
+       "      <td>18.0</td>\n",
+       "      <td>24.0</td>\n",
+       "      <td>60.0</td>\n",
+       "      <td>51.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1676</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>31.0</td>\n",
+       "      <td>31.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "rating     0    1     2     3      4      5  total_interactions  total_ratings\n",
+       "user_id                                                                       \n",
+       "1533     0.0  2.0   5.0   1.0   12.0  108.0               128.0          128.0\n",
+       "1535     6.0  1.0  10.0  53.0  248.0  476.0               794.0          788.0\n",
+       "1581     0.0  0.0   0.0   0.0    0.0    1.0                 1.0            1.0\n",
+       "1634     9.0  0.0   2.0   7.0   18.0   24.0                60.0           51.0\n",
+       "1676     0.0  1.0   0.0   2.0    2.0   26.0                31.0           31.0"
+      ]
+     },
+     "execution_count": 20,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#Create a user activity dataframe\n",
+    "\n",
+    "df_uactivity = df_uactivity.groupby('user_id')['rating'].value_counts().unstack().fillna(0)\n",
+    "\n",
+    "cols = list(df_uactivity)\n",
+    "df_uactivity['total_interactions'] = df_uactivity[cols].sum(axis=1)\n",
+    "df_uactivity['total_ratings'] = df_uactivity['total_interactions']-df_uactivity[0]\n",
+    "\n",
+    "df_uactivity.head()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Filter out inactive users"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(17099, 8)"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_uactivity = df_uactivity[df_uactivity['total_interactions']>=7]\n",
+    "df_uactivity.shape"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Create average rating per user"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\LiY140\\AppData\\Local\\Continuum\\anaconda3\\lib\\site-packages\\numpy\\ma\\extras.py:628: RuntimeWarning: invalid value encountered in double_scalars\n",
+      "  avg = np.multiply(a, wgt, dtype=result_dtype).sum(axis)/scl\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th>rating</th>\n",
+       "      <th>0</th>\n",
+       "      <th>1</th>\n",
+       "      <th>2</th>\n",
+       "      <th>3</th>\n",
+       "      <th>4</th>\n",
+       "      <th>5</th>\n",
+       "      <th>total_interactions</th>\n",
+       "      <th>total_ratings</th>\n",
+       "      <th>uavg_rating</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>user_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>1533</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>12.0</td>\n",
+       "      <td>108.0</td>\n",
+       "      <td>128.0</td>\n",
+       "      <td>128.0</td>\n",
+       "      <td>4.7</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1535</th>\n",
+       "      <td>6.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>10.0</td>\n",
+       "      <td>53.0</td>\n",
+       "      <td>248.0</td>\n",
+       "      <td>476.0</td>\n",
+       "      <td>794.0</td>\n",
+       "      <td>788.0</td>\n",
+       "      <td>4.5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1634</th>\n",
+       "      <td>9.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>7.0</td>\n",
+       "      <td>18.0</td>\n",
+       "      <td>24.0</td>\n",
+       "      <td>60.0</td>\n",
+       "      <td>51.0</td>\n",
+       "      <td>4.3</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1676</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>31.0</td>\n",
+       "      <td>31.0</td>\n",
+       "      <td>4.7</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1792</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>21.0</td>\n",
+       "      <td>31.0</td>\n",
+       "      <td>31.0</td>\n",
+       "      <td>4.5</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "rating     0    1     2     3      4      5  total_interactions  \\\n",
+       "user_id                                                           \n",
+       "1533     0.0  2.0   5.0   1.0   12.0  108.0               128.0   \n",
+       "1535     6.0  1.0  10.0  53.0  248.0  476.0               794.0   \n",
+       "1634     9.0  0.0   2.0   7.0   18.0   24.0                60.0   \n",
+       "1676     0.0  1.0   0.0   2.0    2.0   26.0                31.0   \n",
+       "1792     0.0  0.0   0.0   5.0    5.0   21.0                31.0   \n",
+       "\n",
+       "rating   total_ratings  uavg_rating  \n",
+       "user_id                              \n",
+       "1533             128.0          4.7  \n",
+       "1535             788.0          4.5  \n",
+       "1634              51.0          4.3  \n",
+       "1676              31.0          4.7  \n",
+       "1792              31.0          4.5  "
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(17099, 9)"
+      ]
+     },
+     "execution_count": 22,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_uactivity['uavg_rating'] = df_uactivity.iloc[:,1:6].apply(\n",
+    "    lambda row: np.round(np.ma.average(list(range(1,6)), weights = (row[1], row[2], row[3], row[4], row[5])),1), axis = 1)\n",
+    "display(df_uactivity.head())\n",
+    "df_uactivity.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_uactivity = df_uactivity.reset_index()\n",
+    "df_uactivity.columns.set_names(None, inplace = True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(17088, 10)"
+      ]
+     },
+     "execution_count": 24,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#drop users that only have reviews but no ratings\n",
+    "\n",
+    "df_uactivity.drop(df_uactivity[df_uactivity.total_ratings == 0].index, inplace=True, axis=0)\n",
+    "df_uactivity.shape"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Create filtered interactions df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>recipe_id</th>\n",
+       "      <th>rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1533</td>\n",
+       "      <td>116345</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1533</td>\n",
+       "      <td>32907</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1533</td>\n",
+       "      <td>14750</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1533</td>\n",
+       "      <td>24136</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1533</td>\n",
+       "      <td>63598</td>\n",
+       "      <td>4</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   user_id  recipe_id  rating\n",
+       "0     1533     116345       5\n",
+       "1     1533      32907       5\n",
+       "2     1533      14750       5\n",
+       "3     1533      24136       5\n",
+       "4     1533      63598       4"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(839343, 3)"
+      ]
+     },
+     "execution_count": 25,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# 1. Create Filter for interations with filtered df_uactivity -> Only interactions from active users remain\n",
+    "\n",
+    "user_filter = pd.merge(df_uactivity[['user_id']], df_i[['recipe_id','user_id', 'rating']], how = 'left', on ='user_id')\n",
+    "\n",
+    "display(user_filter.head())\n",
+    "user_filter.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>recipe_id</th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>4470</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>28649</td>\n",
+       "      <td>4</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>37471</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>60992</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>75497</td>\n",
+       "      <td>5</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   recipe_id  user_id  rating\n",
+       "0      63986     4470       5\n",
+       "1      63986    28649       4\n",
+       "2      63986    37471       5\n",
+       "3      63986    60992       5\n",
+       "4      63986    75497       5"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(328731, 3)"
+      ]
+     },
+     "execution_count": 26,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# 2. Filter interactions with active recipes -> Only interactions from active users and clean recipes remain\n",
+    "\n",
+    "interactions = pd.merge(df_rmerged[['recipe_id']], user_filter[['recipe_id', 'user_id', 'rating']], on = 'recipe_id', how ='inner')\n",
+    "display(interactions.head())\n",
+    "interactions.shape"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Set 0 ratings = average rating of a user so that we don't lose the interaction"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of interactions w/ rating: 8169\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(f'Number of interactions w/ rating: {len(interactions.loc[interactions.rating==0])}')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def impute_average_rating(row):\n",
+    "    if (row['rating'] == 0):\n",
+    "        imputed_rating = round(df_uactivity.loc[df_uactivity.user_id == row.user_id, 'uavg_rating'].values[0], 0)\n",
+    "        return imputed_rating\n",
+    "    else:\n",
+    "        return row.rating"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "interactions['rating'] = interactions.apply(impute_average_rating, axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_rating_dist(df_column):\n",
+    "    ratings_series=pd.Series(df_column.value_counts())\n",
+    "    ratings_series.plot.bar()\n",
+    "    print(f'Percent of 5 star rating interactions: {round((ratings_series.loc[5]/len(df_column)*100),2)}%')\n",
+    "    print(f'Percent of 4 star rating interactions: {round((ratings_series.loc[4]/len(df_column)*100),2)}%')\n",
+    "    print(f'Percent of 3 star rating interactions: {round((ratings_series.loc[3]/len(df_column)*100),2)}%')\n",
+    "    print(f'Percent of 2 star rating interactions: {round((ratings_series.loc[2]/len(df_column)*100),2)}%')\n",
+    "    print(f'Percent of 1 star rating interactions: {round((ratings_series.loc[1]/len(df_column)*100),2)}%')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Percent of 5 star rating interactions: 79.63%\n",
+      "Percent of 4 star rating interactions: 15.58%\n",
+      "Percent of 3 star rating interactions: 3.29%\n",
+      "Percent of 2 star rating interactions: 1.03%\n",
+      "Percent of 1 star rating interactions: 0.47%\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "#Let's look at the distribution of ratings\n",
+    "get_rating_dist(interactions.rating)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Creating recipe_id/user_id sparse matrix"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#function to avoid running out of memory (adapted from Chia Chien)\n",
+    "\n",
+    "def create_pivot_table(pd_df):\n",
+    "    data = pd_df.values\n",
+    "    #rows = recipes\n",
+    "    rows, row_pos = np.unique(data[:, 0].astype(int), return_inverse=True)\n",
+    "    #columns = users\n",
+    "    cols, col_pos = np.unique(data[:, 1].astype(int), return_inverse=True)\n",
+    "    pivot_matrix = np.zeros((len(rows), len(cols)), dtype=data.dtype)\n",
+    "    pivot_matrix[row_pos, col_pos] = data[:, 2]\n",
+    "    print('Matrix shape:', pivot_matrix.shape)\n",
+    "    df_matrix = pd.DataFrame(pivot_matrix, index = rows, columns = cols)\n",
+    "    return df_matrix"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "df_matrix = create_pivot_table(interactions)\n",
+    "df_matrix"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## NLP"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Text Preprocessing"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "[nltk_data] Downloading package punkt to\n",
+      "[nltk_data]     C:\\Users\\LiY140\\AppData\\Roaming\\nltk_data...\n",
+      "[nltk_data]   Package punkt is already up-to-date!\n",
+      "[nltk_data] Downloading package stopwords to\n",
+      "[nltk_data]     C:\\Users\\LiY140\\AppData\\Roaming\\nltk_data...\n",
+      "[nltk_data]   Package stopwords is already up-to-date!\n",
+      "[nltk_data] Downloading package wordnet to\n",
+      "[nltk_data]     C:\\Users\\LiY140\\AppData\\Roaming\\nltk_data...\n",
+      "[nltk_data]   Package wordnet is already up-to-date!\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "True"
+      ]
+     },
+     "execution_count": 32,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "## import the libraries\n",
+    "import nltk\n",
+    "import inflect\n",
+    "import re, string, unicodedata\n",
+    "from nltk.corpus import stopwords\n",
+    "from nltk.tokenize import word_tokenize, sent_tokenize\n",
+    "from nltk.corpus import stopwords\n",
+    "from nltk import SnowballStemmer\n",
+    "from nltk.stem import LancasterStemmer, WordNetLemmatizer\n",
+    "\n",
+    "nltk.download('punkt')\n",
+    "nltk.download('stopwords')\n",
+    "nltk.download('wordnet')\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def remove_punctuation(words):\n",
+    "    \"\"\"Remove punctuation from list of tokenized words\"\"\"\n",
+    "    new_words = []\n",
+    "    for word in words:\n",
+    "        new_word = re.sub(r'[^\\w\\s]', '', word)\n",
+    "        if new_word != '':\n",
+    "            new_words.append(new_word)\n",
+    "    return new_words\n",
+    "\n",
+    "def remove_special(words):\n",
+    "    \"\"\"Remove special signs like &*\"\"\"\n",
+    "    new_words = []\n",
+    "    for word in words:\n",
+    "        new_word = re.sub(r'[-,$()#+&*]', '', word)\n",
+    "        if new_word != '':\n",
+    "            new_words.append(new_word)\n",
+    "    return new_words\n",
+    "\n",
+    "def replace_numbers(words):\n",
+    "    \"\"\"Replace all interger occurrences in list of tokenized words with textual representation\"\"\"\n",
+    "    p = inflect.engine()\n",
+    "    new_words = []\n",
+    "    for word in words:\n",
+    "        if word.isdigit():\n",
+    "            new_word = p.number_to_words(word)\n",
+    "            new_words.append(new_word)\n",
+    "        else:\n",
+    "            new_words.append(word)\n",
+    "    return new_words\n",
+    "\n",
+    "def remove_stopwords(words):\n",
+    "    \"\"\"Remove stop words from list of tokenized words\"\"\"  \n",
+    "    stopwords = nltk.corpus.stopwords.words('english')\n",
+    "    myStopWords = []\n",
+    "    stopwords.extend(myStopWords)\n",
+    "    new_words = []\n",
+    "    for word in words:\n",
+    "        if word not in stopwords:\n",
+    "            new_words.append(word)\n",
+    "    return new_words\n",
+    "\n",
+    "def to_lowercase(words):\n",
+    "    \"\"\"Convert words to lowercase\"\"\"\n",
+    "    new_words=[]\n",
+    "    for word in words:\n",
+    "        new_words.append(word.lower())\n",
+    "    return new_words\n",
+    "\n",
+    "def stem_words(words):\n",
+    "    \"\"\"Stem words in list of tokenized words\"\"\"\n",
+    "    stemmer = LancasterStemmer()\n",
+    "    #stemmer = SnowballStemmer('english')\n",
+    "    stems = []\n",
+    "    for word in words:\n",
+    "        stem = stemmer.stem(word)\n",
+    "        stems.append(stem)\n",
+    "    return stems\n",
+    "\n",
+    "def lemmatize_verbs(words):\n",
+    "    \"\"\"Lemmatize verbs in list of tokenized words\"\"\"\n",
+    "    lemmatizer = WordNetLemmatizer()\n",
+    "    lemmas = []\n",
+    "    for word in words:\n",
+    "        lemma = lemmatizer.lemmatize(word, pos='v')\n",
+    "        lemmas.append(lemma)\n",
+    "    return lemmas\n",
+    "\n",
+    "def normalize_lemmatize(words):\n",
+    "    words = remove_special(words)\n",
+    "    words = to_lowercase(words)\n",
+    "    words = remove_punctuation(words)\n",
+    "    words = replace_numbers(words)\n",
+    "    words = remove_stopwords(words)\n",
+    "    #words = stem_words(words)\n",
+    "    words = lemmatize_verbs(words)\n",
+    "    return words"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_processed(data):\n",
+    "    processed = pd.DataFrame(data=[],columns = ['recipe_id', 'content'])\n",
+    "    new_texts = []\n",
+    "\n",
+    "    for i in range(0, len(data)):\n",
+    "        recipe_id = data['recipe_id'].iloc[i]\n",
+    "        words = nltk.word_tokenize(data['content'].iloc[i])\n",
+    "        text = ' '.join(normalize_lemmatize(words))\n",
+    "        dfnew = pd.DataFrame([[recipe_id, text]], columns=['recipe_id', 'content'])\n",
+    "        new_texts.append(text)\n",
+    "        processed = processed.append(dfnew,ignore_index = True)\n",
+    "\n",
+    "    return processed"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(11090, 19)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(11050, 19)"
+      ]
+     },
+     "execution_count": 35,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "filtered_recipes = pd.unique(interactions['recipe_id'])\n",
+    "df_rfiltered = df_rmerged[df_rmerged.recipe_id.isin(filtered_recipes)]\n",
+    "print(df_rmerged.shape)\n",
+    "df_rfiltered.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def create_content (df, column_names):\n",
+    "    length = len(column_names)\n",
+    "    df_content = df\n",
+    "    df_content['content'] = df.loc[:, (column_names)].apply(lambda texts: ' '.join(texts), axis=1)\n",
+    "    df_content.drop(columns = column_names, inplace = True)\n",
+    "    df_content['content']=df_content['content'].apply(lambda text: ' '.join(text.split()))\n",
+    "    return df_content"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 37,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\LiY140\\AppData\\Local\\Continuum\\anaconda3\\lib\\site-packages\\pandas\\core\\generic.py:5096: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: http://pandas.pydata.org/pandas-docs/stable/indexing.html#indexing-view-versus-copy\n",
+      "  self[name] = value\n",
+      "C:\\Users\\LiY140\\AppData\\Local\\Continuum\\anaconda3\\lib\\site-packages\\ipykernel_launcher.py:4: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: http://pandas.pydata.org/pandas-docs/stable/indexing.html#indexing-view-versus-copy\n",
+      "  after removing the cwd from sys.path.\n",
+      "C:\\Users\\LiY140\\AppData\\Local\\Continuum\\anaconda3\\lib\\site-packages\\pandas\\core\\frame.py:3940: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame\n",
+      "\n",
+      "See the caveats in the documentation: http://pandas.pydata.org/pandas-docs/stable/indexing.html#indexing-view-versus-copy\n",
+      "  errors=errors)\n",
+      "C:\\Users\\LiY140\\AppData\\Local\\Continuum\\anaconda3\\lib\\site-packages\\ipykernel_launcher.py:6: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: http://pandas.pydata.org/pandas-docs/stable/indexing.html#indexing-view-versus-copy\n",
+      "  \n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>recipe_id</th>\n",
+       "      <th>content</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>15</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>chicken lickin good pork chops here's and old ...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>36</th>\n",
+       "      <td>25775</td>\n",
+       "      <td>how i got my family to eat spinach spinach cas...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>43</th>\n",
+       "      <td>58224</td>\n",
+       "      <td>immoral sandwich filling loose meat just the t...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>53</th>\n",
+       "      <td>22526</td>\n",
+       "      <td>land of nod cinnamon buns i have made this sev...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>67</th>\n",
+       "      <td>74805</td>\n",
+       "      <td>never weep whipped cream i don't know where i ...</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "    recipe_id                                            content\n",
+       "15      63986  chicken lickin good pork chops here's and old ...\n",
+       "36      25775  how i got my family to eat spinach spinach cas...\n",
+       "43      58224  immoral sandwich filling loose meat just the t...\n",
+       "53      22526  land of nod cinnamon buns i have made this sev...\n",
+       "67      74805  never weep whipped cream i don't know where i ..."
+      ]
+     },
+     "execution_count": 37,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#flatten steps data\n",
+    "df_rfiltered.steps = df_rfiltered.loc[:, ('steps')].str.replace(\"\\[\", \"\").str.replace(\"'\", \"\").str.replace(\"\\]\", \"\").str.replace(\",\",\"\").copy()\n",
+    "\n",
+    "#create content df\n",
+    "df_rfiltered = create_content(df_rfiltered[['recipe_id', 'name','description', 'steps']], ['name','description', 'steps'])\n",
+    "\n",
+    "df_rfiltered.head()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(11050, 2)"
+      ]
+     },
+     "execution_count": 38,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_rfiltered.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 39,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(11050, 2)"
+      ]
+     },
+     "execution_count": 39,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "content_processed = get_processed(df_rfiltered)\n",
+    "content_processed.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sample = content_processed.sample(n=3000, replace=False, random_state=42)\\\n",
+    "                 .reset_index()\\\n",
+    "                 .drop(columns=['index'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Vectorization"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 41,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from sklearn.feature_extraction.text import TfidfVectorizer\n",
+    "from sklearn.decomposition import TruncatedSVD\n",
+    "from sklearn.metrics.pairwise import cosine_similarity"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_cos_sim_matrix(processed):\n",
+    "    tfidf = TfidfVectorizer(stop_words='english')\n",
+    "    processed['content'] = processed['content'].fillna('')\n",
+    "    tfidf_matrix = tfidf.fit_transform(processed['content'])\n",
+    "    #reduce dimensionality of tfidf matrix\n",
+    "    svd = TruncatedSVD(n_components=10, random_state=42)\n",
+    "    tfidf_truncated = svd.fit_transform(tfidf_matrix) \n",
+    "    cosine_sim = cosine_similarity(tfidf_truncated,tfidf_truncated)\n",
+    "    return cosine_sim"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 63,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(11050, 11050)"
+      ]
+     },
+     "execution_count": 63,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "cosine_sim = get_cos_sim_matrix(content_processed)\n",
+    "cosine_sim.shape"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Make prediction function --> for RMSE"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 64,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#prediction for 1 already rated recipe based on similarities to other already rated recipes\n",
+    "\n",
+    "def get_one_prediction(similarity, content, interactions, user_id, recipe_id):\n",
+    "    sim = pd.DataFrame(similarity, index=content['recipe_id'].values, columns=content['recipe_id'].values)\n",
+    "    #get already rated recipes of user\n",
+    "    rated_recipes = interactions[interactions['user_id']==user_id]['recipe_id'].values\n",
+    "    #get similarities of to be predicted recipe rating with already rated recipes by user x\n",
+    "    sim_rated = sim.loc[sim.index==recipe_id, rated_recipes].loc[recipe_id].values\n",
+    "    #get ratings of rated recipes\n",
+    "    ratings = interactions[interactions['user_id']==user_id]['rating'].values\n",
+    "    \n",
+    "    actual = interactions.loc[(interactions.user_id==user_id) & (interactions.recipe_id==recipe_id)]['rating'].values[0]\n",
+    "    prediction = np.dot(ratings, sim_rated) /np.array([np.abs(sim_rated).sum(axis=0)])\n",
+    "    return actual, prediction"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 45,
+   "metadata": {
+    "pycharm": {
+     "name": "#%%\n"
+    }
+   },
+   "outputs": [],
+   "source": [
+    "#only relevant if there is a recipe sample\n",
+    "\n",
+    "def get_interaction_processed(processed, interactions):\n",
+    "    #fetch only interactions in the preprocessed sample\n",
+    "    interactions_processed = interactions.loc[interactions.recipe_id.isin(processed.recipe_id)]\\\n",
+    "                           .reset_index()\\\n",
+    "                           .drop(columns=['index'])\n",
+    "    print(f'Interactions before processing: {len(interactions.index)}\\nInteractions covered in sample: {len(interactions_processed.index)}')\n",
+    "    return interactions_processed"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 46,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Interactions before processing: 328731\n",
+      "Interactions covered in sample: 89697\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>recipe_id</th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>4470</td>\n",
+       "      <td>5.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>28649</td>\n",
+       "      <td>4.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>37471</td>\n",
+       "      <td>5.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>60992</td>\n",
+       "      <td>5.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>75497</td>\n",
+       "      <td>5.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   recipe_id  user_id  rating\n",
+       "0      63986     4470     5.0\n",
+       "1      63986    28649     4.0\n",
+       "2      63986    37471     5.0\n",
+       "3      63986    60992     5.0\n",
+       "4      63986    75497     5.0"
+      ]
+     },
+     "execution_count": 46,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "interactions_processed = get_interaction_processed(sample, interactions)\n",
+    "interactions_processed.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### a) Make predictions based on tfidf"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 71,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "uids = interactions['user_id'].values\n",
+    "rids = interactions['recipe_id'].values\n",
+    "\n",
+    "predictions_cos = []\n",
+    "actual_cos = []\n",
+    "\n",
+    "#Make a prediction for each interaction in the interactions df\n",
+    "for i in range(len(interactions)):\n",
+    "    act, pred = get_one_prediction(cosine_sim, content_processed, interactions, uids[i], rids[i])\n",
+    "    predictions_cos.append(pred)\n",
+    "    actual_cos.append(act)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 72,
+   "metadata": {
+    "pycharm": {
+     "name": "#%%\n"
+    }
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "RMSE: 0.5236490480539858, MAE: 0.3245386233762958\n"
+     ]
+    }
+   ],
+   "source": [
+    "rmse_cos = mean_squared_error(predictions_cos, actual_cos)**0.5\n",
+    "mae_cos = mean_absolute_error(predictions_cos, actual_cos)\n",
+    "print(f'RMSE: {rmse_cos}, MAE: {mae_cos}')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 87,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>recipe_id</th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>rating</th>\n",
+       "      <th>predicted_rating</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>4470</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>4.944262</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>28649</td>\n",
+       "      <td>4.0</td>\n",
+       "      <td>4.722126</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>37471</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>4.926481</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>60992</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>4.828718</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>63986</td>\n",
+       "      <td>75497</td>\n",
+       "      <td>5.0</td>\n",
+       "      <td>4.223794</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   recipe_id  user_id  rating  predicted_rating\n",
+       "0      63986     4470     5.0          4.944262\n",
+       "1      63986    28649     4.0          4.722126\n",
+       "2      63986    37471     5.0          4.926481\n",
+       "3      63986    60992     5.0          4.828718\n",
+       "4      63986    75497     5.0          4.223794"
+      ]
+     },
+     "execution_count": 87,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "interactions['predicted_rating'] = [item for sublist in predictions_cos for item in sublist]\n",
+    "interactions.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 91,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Percent of 5 star rating interactions: 82.54%\n",
+      "Percent of 4 star rating interactions: 16.97%\n",
+      "Percent of 3 star rating interactions: 0.43%\n",
+      "Percent of 2 star rating interactions: 0.05%\n",
+      "Percent of 1 star rating interactions: 0.01%\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "get_rating_dist(round(interactions.predicted_rating))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### b) Make predictions based on Mixture Model c) based on Word Embeddings etc. ..."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#todo"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Recommendation -> =/= already rated -> Coverage\n",
+    "= recommend highest predicted rating NOT seen yet\n",
+    "-> new prediction for ALL recipes for 1 user\n",
+    "\n",
+    "\n",
+    "<-> Prediction -> RMSE "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Make recommendations --> Coverage"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#todo"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Word Embedding"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from gensim import corpora\n",
+    "from gensim import corpora\n",
+    "from gensim.similarities.docsim import Similarity\n",
+    "from gensim import corpora, models, similarities"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import gensim.downloader as api"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "model = api.load(\"glove-wiki-gigaword-50\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Embed the steps text"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_rmerged.ingredients =df_r.ingredients\n",
+    "ingredient_list = []\n",
+    "for e in df_rmerged.ingredients.values:\n",
+    "    ingredient_list.extend(eval(e[1:-1]))\n",
+    "    \n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Archive"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#add some stopwords\n",
+    "new_stopwords = ['.', '\\\"', '\\'', ':', '(', ')', ',', '-', 'etc', '1', '/', '2', '3', '\\'s', '\\'\\'''','``', '!' ]\n",
+    "stop_words.extend(new_stopwords)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# plot some distributions\n",
+    "columns =[\"num_interactions\", \"avg_rating\", \"age\", \"hours\", \"n_steps\", \"n_ingredients\"]\n",
+    "\n",
+    "fig, axes = plt.subplots(6, 1, figsize=(10,30))\n",
+    "i=0\n",
+    "for c in columns:\n",
+    "    axes[i].set_title(c)\n",
+    "    axes[i].hist(df_rmerged[c], log = True)\n",
+    "    i+=1\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# df_rmerged.ingredients = df_r.ingredients\n",
+    "# df_rmerged.ingredients= df_rmerged.ingredients.str.replace(\"\\[\", \"\").str.replace(\"'\", \"\").str.replace(\"\\]\", \"\").str.replace(\",\",\"\")\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# count_vectorizer = CountVectorizer(tokenizer = lambda x: x.split(\" \"), stop_words =\"english\", binary=True)\n",
+    "# matrix = count_vectorizer.fit_transform(df_rmerged[\"ingredients\"])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# m=matrix.toarray()\n",
+    "# m.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "# sim_ingredients= next(pairwise_distances_chunked(m, metric=\"jaccard\", n_jobs=-1))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "\n",
+    "# i=0\n",
+    "# for chunk in pairwise_distances_chunked(m, metric=\"jaccard\", n_jobs=-1):\n",
+    "#     if i= 0:\n",
+    "#         sim_ingredients= chunk\n",
+    "#         i=1\n",
+    "#         elif:\n",
+    "#             sim_ingredients = np.append(sim_ingredients, chunk, axis=0)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# sim_ingredients=[]\n",
+    "\n",
+    "# x =np.array([[1,2,3,4],[1,2,3,4]])\n",
+    "# sim_ingredients = np.append(x, ([[4,6,7,8],[4,5,6,7]]), axis=0)\n",
+    "# sim_ingredients =np.append(sim_ingredients, ([[4,6,7,8],[4,5,6,7]]), axis=0)\n",
+    "# sim_ingredients"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
