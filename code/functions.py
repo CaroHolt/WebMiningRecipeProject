@@ -12,6 +12,14 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
+# deal with NAs in our dataframe
+def deal_with_NAs(df):
+    df.drop(df[df["name"].isna()].index, inplace =True)
+    df["description"].fillna("", inplace=True)
+    df.loc[144074, "minutes"]= 25
+    df.drop(df[df["name"]=="how to preserve a husband"].index, inplace=True)
+
+
 # Insert list of recipes to recommend
 def get_image_source_url(recipe_id):
     url = 'https://www.food.com/recipe/'
