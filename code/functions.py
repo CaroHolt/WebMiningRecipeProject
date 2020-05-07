@@ -46,7 +46,7 @@ def get_image_source_url(recipe_id):
 
     return recipe_image_url
 
-Insert dataframe and name of old and new column as string
+# Insert dataframe and name of old and new column as string
 def get_keywords(df, oldColumnName, newColumnName):
     df[newColumnName] = ""
     for index, row in df.iterrows():
