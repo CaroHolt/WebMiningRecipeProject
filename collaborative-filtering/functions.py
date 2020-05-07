@@ -196,7 +196,7 @@ def personalization(top_n):
 
 
 # Catalog coverage
-def catalog_coverage(top_n):
+def catalog_coverage(top_n, prediction_sample):
     # Build a counter object
     recommended_recipes = Counter()
 
