@@ -8,9 +8,8 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 import numpy as np
-
-import re, string, unicodedata
 import inflect
+import re, string, unicodedata
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
@@ -53,11 +52,11 @@ def filter_byinteractions(num_interactions, age, df, older):
     if (older==True):
         index_remove= df[(df["num_interactions"]<=num_interactions) & (df["age"]>age)]["recipe_id"].index
         df.drop(index_remove, axis=0, inplace=True)
-        print(f'Shape after filtering recipes less than {num_interactions} and older than {age} years old: {df.shape}')
+        print(f'Shape after filtering recipes with less than {num_interactions} interactions and older than {age} years old: {df.shape}')
     else:
         index_remove= df[(df["num_interactions"]<=num_interactions) & (df["age"]<=age)]["recipe_id"].index
         df.drop(index_remove, axis=0, inplace=True)
-        print(f'Shape after filtering recipes less than {num_interactions} and younger than {age} years old: {df.shape}')
+        print(f'Shape after filtering recipes with less than {num_interactions} interactions and younger than {age} years old: {df.shape}')
 def choose_best(interactions, ratings, n_dupl):
     # number of interaction are different -> there exists a maximum
     if((len(interactions) != len(set(interactions)))) :
