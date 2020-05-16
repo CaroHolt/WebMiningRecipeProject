@@ -1,0 +1,13 @@
+- Best Filterstrategy so far:
+	- Only keep active users (> 4 ratings)
+	- Do not filter further
+		- For testing purposes random sampling works equally well
+	- Filter by IQR: [-0.5 3.5] does not work properly
+
+- Train-test-split:
+	- Time-dependent development seems to be not present overall as algorithms perform equally
+	  well independent of the used split
+	- Last ratings user split seems to be a very resonable one
+
+- Sampling
+	
