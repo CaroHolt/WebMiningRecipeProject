@@ -266,3 +266,69 @@ def get_interaction_processed(processed, interactions):
                            .drop(columns=['index'])
   return interactions_processed
 
+
+###  Metrics ###
+
+def get_hits(rec_dict, test_set):
+    """
+    Function computes the number of hits per user.
+
+    Parameters:
+    --------
+    rect_dict: dict
+    Dictionary containing a list of recommended recipes per user
+
+    test_set: pd.DataFrame
+    Data frame containing the user id, recipe id and rating
+
+    Returns
+    --------
+    n_hist_per_user: list
+    Number of hits per user
+    """
+    n_hits_per_user = []
+    for uid in rec_dict:
+        merged_recipe_lists = []
+        # Get ground truth relevant recipes from test set
+        user_interactions = test_set.loc[test_set['user_id'] == uid, ['recipe_id', 'rating']]
+        relevant_recipes = user_interactions.loc[user_interactions.rating >= 4.0, 'recipe_id'].tolist()
+        # Get predicted relevant recipes and compute number of hits
+        # Count the number of equal elements by merging the lists and counting the occurences then substract 1.
+        merged_recipe_lists.extend(rec_dict[uid])
+        merged_recipe_lists.extend(relevant_recipes)
+        n_hits = np.sum(np.unique(merged_recipe_lists, return_counts=True)[1] - 1)
+        # Store the number of hits per user
+        n_hits_per_user.append(n_hits)
+
+    return n_hits_per_user
+
+
+def get_avg_precision(n_hits_per_user, recset_size_users):
+    return np.mean(np.array(n_hits_per_user) / recset_size_users)
+
+
+def get_avg_recall(n_hits_per_user, testset_size_users):
+    return np.mean(np.array(n_hits_per_user) / testset_size_users)
+
+
+def get_f_one(precision, recall):
+    if(precision == 0) & (recall == 0):
+        f_one = 0
+    else:
+        f_one = 2 * precision * recall / (precision + recall)
+    return f_one
+
+
+def catalog_coverage(rec_dict, num_total_recipes):
+    recommended_recipes = set()
+
+    # Get the set of recommended recipes
+    for uid, user_ratings in rec_dict.items():
+        recommended_recipes.update(user_ratings)
+
+    # Compute catalog coverage
+    return (len(recommended_recipes) / num_total_recipes)
+
+def hitrate(n_hits_per_user):
+    hitr = np.sum((np.array(n_hits_per_user) > 0) * 1) / len(n_hits_per_user)
+    return hitr
