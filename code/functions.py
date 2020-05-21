@@ -2,7 +2,6 @@ import selenium
 import nltk
 
 from selenium import webdriver
-from rake_nltk import Rake
 import pandas as pd
 
 from sklearn.feature_extraction.text import TfidfVectorizer
